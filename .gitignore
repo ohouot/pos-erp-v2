@@ -1,0 +1,61 @@
+# Dependencies
+node_modules/
+.pnpm-store/
+
+# Build outputs
+dist/
+build/
+.next/
+*.tsbuildinfo
+
+# Environment
+.env
+.env.local
+.env.*.local
+!.env.example
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+pnpm-debug.log*
+
+# Prisma
+apps/api/prisma/dev.db
+apps/api/prisma/dev.db-journal
+
+# Uploads (local dev storage)
+apps/api/uploads/*
+!apps/api/uploads/.gitkeep
+
+# Sauvegardes de base de données (dumps binaires, jamais versionnés)
+apps/api/backups/*
+!apps/api/backups/.gitkeep
+
+# Husky (régénéré automatiquement par le script "prepare" à chaque install)
+.husky/_/
+
+# IDE
+.vscode/*
+!.vscode/extensions.json
+.idea/
+.claude/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Docker volumes (local)
+.docker/
+
+# Test coverage
+coverage/
+
+# Playwright (E2E) — voir e2e/
+test-results/
+playwright-report/
+blob-report/
+playwright/.cache/
+
+# Misc
+*.local

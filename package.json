@@ -1,0 +1,43 @@
+{
+  "name": "pos-erp-v2",
+  "private": true,
+  "version": "0.1.0",
+  "description": "ERP + POS pour Maquis, Lounge, Bar, Cave, Restaurant et etablissements similaires — reconstruction Next.js/NestJS de pos-erp (voir STACK.md)",
+  "engines": {
+    "node": ">=20.0.0",
+    "pnpm": ">=9.0.0"
+  },
+  "packageManager": "pnpm@11.20.0",
+  "scripts": {
+    "dev": "pnpm --parallel --filter=./apps/* dev",
+    "dev:web": "pnpm --filter=@pos-erp-v2/web dev",
+    "dev:api": "pnpm --filter=@pos-erp-v2/api dev",
+    "build": "pnpm --filter=./packages/* build && pnpm --filter=./apps/* build",
+    "lint": "pnpm --filter=./apps/* --filter=./packages/* lint",
+    "typecheck": "pnpm --filter=./apps/* --filter=./packages/* typecheck",
+    "test": "pnpm --filter=./apps/* --filter=./packages/* test",
+    "e2e": "playwright test --config=e2e/playwright.config.ts",
+    "format": "prettier --write .",
+    "prisma:generate": "pnpm --filter=@pos-erp-v2/api prisma:generate",
+    "prisma:migrate": "pnpm --filter=@pos-erp-v2/api prisma:migrate",
+    "prisma:studio": "pnpm --filter=@pos-erp-v2/api prisma:studio",
+    "db:up": "docker compose up -d postgres redis minio",
+    "db:down": "docker compose down",
+    "prepare": "husky"
+  },
+  "devDependencies": {
+    "@commitlint/cli": "^19.5.0",
+    "@commitlint/config-conventional": "^19.5.0",
+    "@playwright/test": "^1.62.1",
+    "husky": "^9.1.7",
+    "lint-staged": "^15.2.10",
+    "prettier": "^3.3.3",
+    "prettier-plugin-tailwindcss": "^0.6.8",
+    "typescript": "^5.6.3"
+  },
+  "lint-staged": {
+    "*.{ts,tsx}": [
+      "prettier --write"
+    ]
+  }
+}

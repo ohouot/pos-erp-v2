@@ -1,0 +1,148 @@
+# Stack de production : postgres + redis + minio + api + web + reverse proxy
+# Caddy (HTTPS automatique). Variables lues depuis un fichier .env à la
+# racine (voir .env.production.example).
+#
+# Noms de conteneurs/volumes délibérément différents de ceux de
+# docker-compose.yml (dev) : sur une machine où les deux tournent, un nom
+# partagé fait remplacer le conteneur dev par Compose.
+#
+#   docker compose -f docker-compose.prod.yml up -d --build
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: pos-erp-v2-postgres-prod
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${DB_USER}
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+      POSTGRES_DB: ${DB_NAME}
+    volumes:
+      - pos_erp_v2_prod_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER} -d ${DB_NAME}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    networks: [pos_erp_v2]
+
+  redis:
+    image: redis:7-alpine
+    container_name: pos-erp-v2-redis-prod
+    restart: unless-stopped
+    volumes:
+      - pos_erp_v2_prod_redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    networks: [pos_erp_v2]
+
+  minio:
+    image: minio/minio:latest
+    container_name: pos-erp-v2-minio-prod
+    restart: unless-stopped
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${S3_ACCESS_KEY_ID}
+      MINIO_ROOT_PASSWORD: ${S3_SECRET_ACCESS_KEY}
+    volumes:
+      - pos_erp_v2_prod_miniodata:/data
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    networks: [pos_erp_v2]
+
+  api:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    container_name: pos-erp-v2-api
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+    environment:
+      NODE_ENV: production
+      PORT: 4100
+      DATABASE_URL: postgresql://${DB_USER}:${DB_PASSWORD}@postgres:5432/${DB_NAME}?schema=public
+      CLIENT_URL: https://${DOMAIN}
+      JWT_ACCESS_SECRET: ${JWT_ACCESS_SECRET}
+      JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET}
+      JWT_ACCESS_EXPIRES_IN: ${JWT_ACCESS_EXPIRES_IN:-15m}
+      JWT_REFRESH_EXPIRES_IN: ${JWT_REFRESH_EXPIRES_IN:-7d}
+      REDIS_URL: redis://redis:6379
+      S3_ENDPOINT: http://minio:9000
+      S3_REGION: ${S3_REGION:-us-east-1}
+      S3_BUCKET: ${S3_BUCKET:-pos-erp-v2}
+      S3_ACCESS_KEY_ID: ${S3_ACCESS_KEY_ID}
+      S3_SECRET_ACCESS_KEY: ${S3_SECRET_ACCESS_KEY}
+      S3_FORCE_PATH_STYLE: "true"
+      BACKUP_DB_CONTAINER: pos-erp-v2-postgres-prod
+      BACKUP_SCHEDULE_HOURS: ${BACKUP_SCHEDULE_HOURS:-24}
+      BACKUP_RETENTION_COUNT: ${BACKUP_RETENTION_COUNT:-7}
+      SEED_SUPER_ADMIN_EMAIL: ${SEED_SUPER_ADMIN_EMAIL}
+      SEED_SUPER_ADMIN_PASSWORD: ${SEED_SUPER_ADMIN_PASSWORD}
+      RESEND_API_KEY: ${RESEND_API_KEY:-}
+      RESEND_FROM_EMAIL: ${RESEND_FROM_EMAIL:-onboarding@resend.dev}
+    volumes:
+      # Docker-outside-of-Docker : voir apps/api/src/backups/pg-dump.service.ts
+      # — nécessaire pour que la sauvegarde puisse exécuter `docker exec` sur
+      # le conteneur postgres. Donne à ce conteneur un contrôle équivalent à
+      # root sur l'hôte ; compromis assumé pour un VPS mono-admin (seule une
+      # route Super Admin déclenche ce chemin).
+      - /var/run/docker.sock:/var/run/docker.sock
+    networks: [pos_erp_v2]
+
+  web:
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+      args:
+        NEXT_PUBLIC_API_URL: https://${DOMAIN}/api/v1
+        NEXT_PUBLIC_ABLY_ENABLED: "false"
+    container_name: pos-erp-v2-web
+    restart: unless-stopped
+    depends_on: [api]
+    environment:
+      NODE_ENV: production
+      # Appels serveur (next-auth authorize(), refresh) : direct conteneur à
+      # conteneur, pas via Caddy/le domaine public — plus rapide, pas
+      # d'aller-retour Internet inutile.
+      API_URL: http://api:4100
+      NEXTAUTH_URL: https://${DOMAIN}
+      NEXTAUTH_SECRET: ${NEXTAUTH_SECRET}
+    networks: [pos_erp_v2]
+
+  caddy:
+    image: caddy:2-alpine
+    container_name: pos-erp-v2-caddy
+    restart: unless-stopped
+    depends_on: [api, web]
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      DOMAIN: ${DOMAIN}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    networks: [pos_erp_v2]
+
+networks:
+  pos_erp_v2:
+
+volumes:
+  pos_erp_v2_prod_pgdata:
+  pos_erp_v2_prod_redisdata:
+  pos_erp_v2_prod_miniodata:
+  caddy_data:
+  caddy_config:

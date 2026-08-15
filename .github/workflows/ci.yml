@@ -1,0 +1,138 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+env:
+  # Valeurs factices : suffisantes pour que `prisma generate`, le typecheck
+  # et le build passent (aucune connexion DB réelle nécessaire à ces étapes).
+  DATABASE_URL: "postgresql://ci:ci@localhost:5432/ci"
+  JWT_ACCESS_SECRET: "ci_placeholder_access_secret_min_32_characters"
+  JWT_REFRESH_SECRET: "ci_placeholder_refresh_secret_min_32_characters"
+  CLIENT_URL: "http://localhost:3100"
+
+jobs:
+  # quality (lint + typecheck) → build — voir STACK.md §Infra & CI/CD.
+  quality:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 11.20.0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Generate Prisma Client
+        run: pnpm --filter=@pos-erp-v2/api prisma:generate
+
+      - name: Lint
+        run: pnpm lint
+
+      - name: Typecheck
+        run: pnpm typecheck
+
+      - name: Build shared package
+        run: pnpm --filter=@pos-erp-v2/shared build
+
+      - name: Build backend
+        run: pnpm --filter=@pos-erp-v2/api build
+
+      - name: Build frontend
+        run: pnpm --filter=@pos-erp-v2/web build
+        env:
+          NEXT_PUBLIC_API_URL: /api/v1
+          NEXTAUTH_SECRET: ci_placeholder_nextauth_secret_min_32_chars
+          NEXTAUTH_URL: http://localhost:3100
+
+  # Construit les deux images Docker (validation de build uniquement sur les
+  # PR) — poussées vers Docker Hub seulement sur push à main, avec le SHA
+  # court comme tag (voir STACK.md).
+  docker-build:
+    needs: quality
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Docker Hub login
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Compute short SHA tag
+        id: vars
+        run: echo "sha_short=$(git rev-parse --short HEAD)" >> "$GITHUB_OUTPUT"
+
+      - name: Build & (push) API image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: apps/api/Dockerfile
+          push: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+          tags: ${{ secrets.DOCKERHUB_USERNAME }}/pos-erp-v2-api:${{ steps.vars.outputs.sha_short }},${{ secrets.DOCKERHUB_USERNAME }}/pos-erp-v2-api:latest
+          cache-from: type=gha,scope=api
+          cache-to: type=gha,mode=max,scope=api
+
+      - name: Build & (push) web image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: apps/web/Dockerfile
+          push: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+          build-args: |
+            NEXT_PUBLIC_API_URL=/api/v1
+            NEXT_PUBLIC_ABLY_ENABLED=false
+          tags: ${{ secrets.DOCKERHUB_USERNAME }}/pos-erp-v2-web:${{ steps.vars.outputs.sha_short }},${{ secrets.DOCKERHUB_USERNAME }}/pos-erp-v2-web:latest
+          cache-from: type=gha,scope=web
+          cache-to: type=gha,mode=max,scope=web
+
+  # Déploiement SSH : docker pull + docker compose up -d + image prune (voir
+  # STACK.md). Ne s'exécute que sur push à main, et seulement si les secrets
+  # SSH sont configurés (VPS_HOST) — sinon ce job est un no-op silencieux,
+  # pour que ce workflow reste valide sur un dépôt sans VPS encore provisionné.
+  deploy:
+    needs: docker-build
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check VPS secrets configured
+        id: check
+        run: |
+          if [ -n "${{ secrets.VPS_HOST }}" ]; then
+            echo "configured=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "configured=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Deploy via SSH
+        if: steps.check.outputs.configured == 'true'
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          script: |
+            cd ${{ secrets.VPS_DEPLOY_PATH }}
+            docker compose -f docker-compose.prod.yml pull
+            docker compose -f docker-compose.prod.yml up -d
+            docker image prune -f

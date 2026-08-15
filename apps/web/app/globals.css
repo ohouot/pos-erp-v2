@@ -1,0 +1,64 @@
+@import "tailwindcss";
+
+@theme {
+  /* Palette chaleureuse (orange/or) reprise du projet de référence — écran
+     caisse notamment, voir apps/web/src/index.css côté ancien projet. */
+  --color-primary: hsl(27 87% 58%);
+  --color-primary-foreground: hsl(30 40% 98%);
+  --color-secondary: hsl(43 65% 93%);
+  --color-secondary-foreground: hsl(27 40% 25%);
+  --color-muted: hsl(38 35% 95%);
+  --color-muted-foreground: hsl(28 15% 45%);
+  --color-destructive: hsl(4 72% 58%);
+  --color-success: hsl(142 62% 42%);
+  --color-warning: hsl(40 92% 52%);
+  --color-card: hsl(30 40% 99%);
+
+  --animate-fade-in: fade-in 0.4s ease-out;
+  --animate-slide-in-right: slide-in-right 0.3s ease-out;
+  --animate-zoom-in: zoom-in 0.2s ease-out;
+  --animate-pulse-glow: pulse-glow 2.2s ease-in-out infinite;
+
+  @keyframes fade-in {
+    from {
+      opacity: 0;
+    }
+    to {
+      opacity: 1;
+    }
+  }
+  @keyframes slide-in-right {
+    from {
+      opacity: 0;
+      transform: translateX(8px);
+    }
+    to {
+      opacity: 1;
+      transform: translateX(0);
+    }
+  }
+  @keyframes zoom-in {
+    from {
+      opacity: 0;
+      transform: scale(0.5);
+    }
+    to {
+      opacity: 1;
+      transform: scale(1);
+    }
+  }
+  @keyframes pulse-glow {
+    0%,
+    100% {
+      box-shadow: 0 0 0 0 hsl(27 87% 58% / 0.35);
+    }
+    50% {
+      box-shadow: 0 0 0 10px hsl(27 87% 58% / 0);
+    }
+  }
+}
+
+body {
+  background: hsl(38 35% 97%);
+  color: hsl(27 20% 15%);
+}

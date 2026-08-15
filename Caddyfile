@@ -1,0 +1,23 @@
+# Reverse proxy unique de production : sert le frontend et proxy l'API sous
+# le même domaine (évite les soucis CORS/cookies cross-origin — le cookie de
+# session next-auth et le refresh token httpOnly sont scopés à ce domaine).
+# HTTPS automatique (Let's Encrypt) dès que {$DOMAIN} pointe vers ce serveur
+# et que les ports 80/443 sont accessibles depuis Internet.
+{$DOMAIN} {
+	encode gzip
+
+	handle /api/* {
+		reverse_proxy api:4100
+	}
+
+	# Caddy détecte et proxifie nativement les upgrades WebSocket
+	# (Connection: Upgrade) — aucune configuration supplémentaire pour
+	# Socket.io (chemin temps réel par défaut, voir apps/api/src/realtime/).
+	handle /socket.io/* {
+		reverse_proxy api:4100
+	}
+
+	handle {
+		reverse_proxy web:3100
+	}
+}
