@@ -2,7 +2,7 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    branches: [master]
   pull_request:
 
 env:
@@ -58,7 +58,7 @@ jobs:
           NEXTAUTH_URL: http://localhost:3100
 
   # Construit les deux images Docker (validation de build uniquement sur les
-  # PR) — poussées vers Docker Hub seulement sur push à main, avec le SHA
+  # PR) — poussées vers Docker Hub seulement sur push à master, avec le SHA
   # court comme tag (voir STACK.md).
   docker-build:
     needs: quality
@@ -73,7 +73,7 @@ jobs:
         uses: docker/setup-buildx-action@v3
 
       - name: Docker Hub login
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        if: github.event_name == 'push' && github.ref == 'refs/heads/master'
         uses: docker/login-action@v3
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
@@ -88,7 +88,7 @@ jobs:
         with:
           context: .
           file: apps/api/Dockerfile
-          push: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+          push: ${{ github.event_name == 'push' && github.ref == 'refs/heads/master' }}
           tags: ${{ secrets.DOCKERHUB_USERNAME }}/pos-erp-v2-api:${{ steps.vars.outputs.sha_short }},${{ secrets.DOCKERHUB_USERNAME }}/pos-erp-v2-api:latest
           cache-from: type=gha,scope=api
           cache-to: type=gha,mode=max,scope=api
@@ -98,7 +98,7 @@ jobs:
         with:
           context: .
           file: apps/web/Dockerfile
-          push: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+          push: ${{ github.event_name == 'push' && github.ref == 'refs/heads/master' }}
           build-args: |
             NEXT_PUBLIC_API_URL=/api/v1
             NEXT_PUBLIC_ABLY_ENABLED=false
@@ -107,12 +107,12 @@ jobs:
           cache-to: type=gha,mode=max,scope=web
 
   # Déploiement SSH : docker pull + docker compose up -d + image prune (voir
-  # STACK.md). Ne s'exécute que sur push à main, et seulement si les secrets
+  # STACK.md). Ne s'exécute que sur push à master, et seulement si les secrets
   # SSH sont configurés (VPS_HOST) — sinon ce job est un no-op silencieux,
   # pour que ce workflow reste valide sur un dépôt sans VPS encore provisionné.
   deploy:
     needs: docker-build
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    if: github.event_name == 'push' && github.ref == 'refs/heads/master'
     runs-on: ubuntu-latest
     steps:
       - name: Check VPS secrets configured
