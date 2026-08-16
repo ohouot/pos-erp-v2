@@ -38,14 +38,14 @@ jobs:
       - name: Generate Prisma Client
         run: pnpm --filter=@pos-erp-v2/api prisma:generate
 
+      - name: Build shared package
+        run: pnpm --filter=@pos-erp-v2/shared build
+
       - name: Lint
         run: pnpm lint
 
       - name: Typecheck
         run: pnpm typecheck
-
-      - name: Build shared package
-        run: pnpm --filter=@pos-erp-v2/shared build
 
       - name: Build backend
         run: pnpm --filter=@pos-erp-v2/api build
